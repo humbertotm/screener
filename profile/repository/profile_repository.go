@@ -6,6 +6,7 @@ type profileRepository struct {
 	Client interface{} // This is to be replaced by the MongoDB client type
 }
 
+// NewProfileRepository returns a fresh profileRepository
 func NewProfileRepository(Client interface{}) domain.ProfileRepository {
 	return &profileRepository{Client}
 }

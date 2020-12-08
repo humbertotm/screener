@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -29,6 +30,9 @@ func main() {
 	// Terminate MongoDB connection
 	// TODO: gracefully handle this panic?
 	defer func() {
+		// CURIOSITY: this line is printed whenever there's a panic in the
+		// handleCommand function, not when the program exits successfully.
+		// Why? Is this defered function being executed upon successful termination?
 		fmt.Println("Terminating mongodb connection")
 		if err := client.Disconnect(ctx); err != nil {
 			panic(err)
@@ -36,7 +40,7 @@ func main() {
 	}()
 
 	// Handle input subcommand
-	handleCommand(client)
+	handleCommand(ctx, client)
 
 	// Exit program successfully
 	os.Exit(0)
@@ -57,7 +61,7 @@ func initMongoClient(ctx context.Context) (*mongo.Client, error) {
 }
 
 // TODO: return errors and let main function handle the exit
-func handleCommand(client *mongo.Client) {
+func handleCommand(ctx context.Context, client *mongo.Client) {
 	coDetailsCmd := flag.NewFlagSet("companydetails", flag.ExitOnError)
 	coCIK := coDetailsCmd.String("cik", "", "cik")
 	coDetailsCmd.Usage = func() {
@@ -84,6 +88,29 @@ func handleCommand(client *mongo.Client) {
 		} else {
 			coDetailsCmd.Parse(os.Args[2:])
 			fmt.Printf("Extracting details for CIK %s\n", *coCIK)
+
+			type Profile struct {
+				CIK     string             `json:"cik"`
+				Ticker  string             `json:"ticker"`
+				Year    int                `json:"year"`
+				Profile map[string]float64 `json:"profile"`
+			}
+
+			var testProfile Profile // underlying map[string]interface{}
+			filter := bson.D{
+				{"cik", *coCIK},
+				{"year", 2015},
+			}
+
+			collection := client.Database("profiler").Collection("profiles")
+			err := collection.FindOne(ctx, filter).Decode(&testProfile)
+			if err != nil {
+				fmt.Printf("Error occurred while retrieving a document: %s\n", err.Error())
+				os.Exit(1)
+			}
+			profile := testProfile.Profile
+
+			fmt.Printf("Goodwill: %f\n", profile["goodwill"])
 		}
 
 	default:

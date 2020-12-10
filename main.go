@@ -12,6 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"screener.com/domain"
+	"screener.com/profile/repository/mongodb"
 )
 
 func main() {
@@ -81,6 +82,14 @@ func handleCommand(ctx context.Context, client *mongo.Client) {
 	// go run main.go fullscreen
 	case "fullscreen":
 		fmt.Println("Executing full screening task...")
+		r := mongodb.NewProfileRepository(client)
+		ciks, err := r.GetFullCIKList(ctx)
+		if err != nil {
+			fmt.Printf("Error while retrieving cik list: %s\n", err.Error())
+			os.Exit(1)
+		}
+		fmt.Printf("cik list count: %d\n", len(ciks))
+		fmt.Printf("first cik: %s\n", ciks[0].(string))
 	// go run main.go companydetails --cik=111111
 	case "companydetails":
 		if len(os.Args[2:]) < 1 {

@@ -10,6 +10,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"screener.com/domain"
 )
 
 func main() {
@@ -89,14 +91,7 @@ func handleCommand(ctx context.Context, client *mongo.Client) {
 			coDetailsCmd.Parse(os.Args[2:])
 			fmt.Printf("Extracting details for CIK %s\n", *coCIK)
 
-			type Profile struct {
-				CIK     string             `json:"cik"`
-				Ticker  string             `json:"ticker"`
-				Year    int                `json:"year"`
-				Profile map[string]float64 `json:"profile"`
-			}
-
-			var testProfile Profile // underlying map[string]interface{}
+			var testProfile domain.YearlyProfile
 			filter := bson.D{
 				{"cik", *coCIK},
 				{"year", 2015},
@@ -110,7 +105,7 @@ func handleCommand(ctx context.Context, client *mongo.Client) {
 			}
 			profile := testProfile.Profile
 
-			fmt.Printf("Goodwill: %f\n", profile["goodwill"])
+			fmt.Printf("Goodwill: %f\n", *(profile["goodwill"]))
 		}
 
 	default:

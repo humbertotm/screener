@@ -7,11 +7,10 @@ import (
 	"os"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
-	"screener.com/domain"
+	"screener.com/profile/repository/mongodb"
 )
 
 func main() {
@@ -81,6 +80,14 @@ func handleCommand(ctx context.Context, client *mongo.Client) {
 	// go run main.go fullscreen
 	case "fullscreen":
 		fmt.Println("Executing full screening task...")
+		r := mongodb.NewProfileRepository(client)
+		ciks, err := r.GetFullCIKList(ctx)
+		if err != nil {
+			fmt.Printf("Error while retrieving cik list: %s\n", err.Error())
+			os.Exit(1)
+		}
+		fmt.Printf("cik list count: %d\n", len(*ciks))
+		fmt.Printf("first cik: %s\n", (*ciks)[0].(string))
 	// go run main.go companydetails --cik=111111
 	case "companydetails":
 		if len(os.Args[2:]) < 1 {
@@ -90,22 +97,19 @@ func handleCommand(ctx context.Context, client *mongo.Client) {
 		} else {
 			coDetailsCmd.Parse(os.Args[2:])
 			fmt.Printf("Extracting details for CIK %s\n", *coCIK)
-
-			var testProfile domain.YearlyProfile
-			filter := bson.D{
-				{"cik", *coCIK},
-				{"year", 2015},
-			}
-
-			collection := client.Database("profiler").Collection("profiles")
-			err := collection.FindOne(ctx, filter).Decode(&testProfile)
+			r := mongodb.NewProfileRepository(client)
+			fcProfile, err := r.GetFullProfileForCIK(ctx, *coCIK)
 			if err != nil {
-				fmt.Printf("Error occurred while retrieving a document: %s\n", err.Error())
+				fmt.Printf("Error while retrieving full profile for cik: %s, err: %s\n", *coCIK, err.Error())
 				os.Exit(1)
 			}
-			profile := testProfile.Profile
 
-			fmt.Printf("Goodwill: %f\n", *(profile["goodwill"]))
+			fmt.Printf("Number of yearly profiles retrieved: %d\n", len(*fcProfile))
+
+			testProfile := (*fcProfile)[7]
+			goodwill := testProfile.Profile["goodwill"]
+
+			fmt.Printf("Goodwill: %f\n", *goodwill)
 		}
 
 	default:

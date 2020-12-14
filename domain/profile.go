@@ -1,12 +1,14 @@
 package domain
 
-import "context"
+import (
+	"context"
+)
 
 // ProfileRepository defines the interface employed to interact with the profiles db
 type ProfileRepository interface {
-	GetFullCIKList(ctx context.Context) ([]interface{}, error)
-	GetFullProfileForCIK(ctx context.Context, cik string) (FullCompanyProfile, error)
-	GetFullProfileForTicker(ctx context.Context, ticker string) (FullCompanyProfile, error)
+	GetFullCIKList(ctx context.Context) (*[]interface{}, error)
+	GetFullProfileForCIK(ctx context.Context, cik string) (*FullCompanyProfile, error)
+	GetFullProfileForTicker(ctx context.Context, ticker string) (*FullCompanyProfile, error)
 }
 
 // FinancialProfile is employed to unmarshall the financial data contained in
@@ -24,4 +26,4 @@ type YearlyProfile struct {
 }
 
 // FullCompanyProfile defines a company's profile for a range of years
-type FullCompanyProfile []*YearlyProfile
+type FullCompanyProfile []YearlyProfile

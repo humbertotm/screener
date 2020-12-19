@@ -16,7 +16,7 @@ func ComputeLinearRegression(xs, ys []float64) (float64, float64, error) {
 	origin := false
 
 	if len(xs) != len(ys) {
-		return 0, 0, fmt.Errorf("Xs and Ys must be the same length.")
+		return 0, 0, fmt.Errorf("Xs and Ys must be the same length")
 	}
 
 	alpha, beta := stat.LinearRegression(xs, ys, weights, origin)
@@ -24,15 +24,23 @@ func ComputeLinearRegression(xs, ys []float64) (float64, float64, error) {
 }
 
 // ComputeAverage computes the mean value for provided set of data points
-func ComputeAverage(dataPoints []float64) float64 {
-	return stat.Mean(dataPoints, nil)
+func ComputeAverage(dataPoints []float64) (float64, error) {
+	if !(len(dataPoints) > 0) {
+		return 0.0, fmt.Errorf("Must provide a non empty collection of data points")
+	}
+
+	return stat.Mean(dataPoints, nil), nil
 }
 
 // ComputeCompoundingRate computes a compounding rate for delta between final and initial
 // value in a specified period count
-func ComputeCompoundingRate(initial, final float64, periodCount int) float64 {
+func ComputeCompoundingRate(initial, final float64, periodCount int) (float64, error) {
+	if !(periodCount > 0) {
+		return 0, fmt.Errorf("Invalid period count")
+	}
+
 	base := final / initial
 	exp := 1.0 / float64(periodCount)
 
-	return math.Pow(base, exp) - 1.0
+	return math.Pow(base, exp) - 1.0, nil
 }

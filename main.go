@@ -106,7 +106,7 @@ func handleCommand(ctx context.Context, client *mongo.Client) {
 
 			fmt.Printf("Number of yearly profiles retrieved: %d\n", len(*fcProfile))
 
-			testProfile := (*fcProfile)[7]
+			testProfile := (*fcProfile)[0]
 			goodwill := testProfile.Profile["goodwill"]
 
 			fmt.Printf("Goodwill: %f\n", *goodwill)

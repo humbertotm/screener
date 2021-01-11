@@ -47,6 +47,9 @@ func (r *profileRepository) GetFullProfileForCIK(ctx context.Context, cik string
 	collection := r.Client.Database(profilerDatabase).Collection(profilesCollection)
 	filter := bson.D{{"cik", cik}}
 	opts := options.Find()
+	// Ensure documents are sorted ascendingly by year
+	opts.SetSort(bson.D{{"price", 1}})
+
 	cursor, err := collection.Find(ctx, filter, opts)
 	if err != nil {
 		return nil, err
@@ -65,6 +68,9 @@ func (r *profileRepository) GetFullProfileForTicker(ctx context.Context, ticker 
 	collection := r.Client.Database(profilerDatabase).Collection(profilesCollection)
 	filter := bson.D{{"ticker", ticker}}
 	opts := options.Find()
+	// Ensure documents are sorted ascendingly by year
+	opts.SetSort(bson.D{{"price", 1}})
+
 	cursor, err := collection.Find(ctx, filter, opts)
 	if err != nil {
 		return nil, err

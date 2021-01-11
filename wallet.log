@@ -1,0 +1,2 @@
+[INFO] [2021-01-04T10:06:23.418026611] [init-logger] path=wallet.log
+[INFO] [2021-01-04T10:06:23.418287952] [init-memcache]  server= keyPrefix=

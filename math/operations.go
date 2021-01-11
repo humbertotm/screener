@@ -44,3 +44,24 @@ func ComputeCompoundingRate(initial, final float64, periodCount int) (float64, e
 
 	return math.Pow(base, exp) - 1.0, nil
 }
+
+// ComputeChangeHistory returns a slice representing the proportional change from one
+// data point to the next
+func ComputeChangeRateHistory(dataPoints []float64) []float64 {
+	var changeRateHistory []float64
+
+	for i := 1; i < len(dataPoints); i++ {
+		curr := dataPoints[i]
+		prev := dataPoints[i-1]
+
+		if prev == 0 {
+			// Can't calculate
+			changeRateHistory = append(changeRateHistory, 0)
+		} else {
+			changeRate := (curr - prev) / prev
+			changeRateHistory = append(changeRateHistory, changeRate)
+		}
+	}
+
+	return changeRateHistory
+}

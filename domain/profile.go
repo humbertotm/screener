@@ -3,8 +3,9 @@ package domain
 import (
 	"context"
 
-	"screener.com/math"
 	"screener.com/finance"
+	"screener.com/math"
+	"screener.com/utils"
 )
 
 const (
@@ -35,6 +36,13 @@ var descriptorList = []string{
 	"return_on_working_capital",
 }
 
+var perShareDescriptorList = []string{
+	"tangible_assets_per_share",
+	"liabilities_per_share",
+	"eps",
+	"equity_per_share",
+}
+
 // ProfileRepository defines the interface employed to interact with the profiles db
 type ProfileRepository interface {
 	GetFullCIKList(ctx context.Context) (*[]interface{}, error)
@@ -46,7 +54,7 @@ type ProfileRepository interface {
 // YearlyProfile.Profile
 // A type *float64 is employed for values in map as it is important to know a value is null
 // as opposed to using its zero value.
-type FinancialProfile map[string]*float64
+type FinancialProfile map[string]float64
 
 // YearlyProfile defines the structure of the documents pulled out of the profiles collection
 type YearlyProfile struct {
@@ -63,7 +71,7 @@ type FullCompanyProfile []YearlyProfile
 func (p *FullCompanyProfile) HasEnoughData() bool {
 	profLen := len(*p)
 
-	for i := profLen - 1; i > (profLen - 1 - minYrsOfData); i-- {
+	for i := profLen - 1; i > (profLen - minYrsOfData - 1); i-- {
 		if len((*p)[i].Profile) == 0 {
 			return false
 		}
@@ -75,12 +83,11 @@ func (p *FullCompanyProfile) HasEnoughData() bool {
 // Purge modifies the referenced FullCompanyProfile in place leaving only consecutive
 // YearlyProfiles containing data. Assumes elements have been preorded ascendingly based on
 // year
-func (p *FullCompanyProfile) Purge() {
+func (p *FullCompanyProfile) purge() {
 	profLen := len(*p)
-	for i := profLen - minYrsOfData - 2; i >= 0; i-- {
+	for i := profLen - minYrsOfData - 1; i >= 0; i-- {
 		if len((*p)[i].Profile) == 0 {
-			purgedProfile := (*p)[i+1:]
-			p = &purgedProfile
+			*p = (*p)[i+1:]
 			return
 		}
 	}
@@ -95,125 +102,124 @@ func (p *FullCompanyProfile) ExtractHistoryFor(key string) []float64 {
 	var history []float64
 
 	for i := 0; i < len(*p); i++ {
-		history = append(history, *((*p)[i].Profile[key]))
+		history = append(history, (*p)[i].Profile[key])
 	}
 
 	return history
 }
 
 func (p *FullCompanyProfile) ComputeCompanyStats() (*CompanyStats, error) {
-	// prof := *p
-
-	// beginAt := prof[0].Year
-	// endAt := prof[len(prof)-1].Year
-	// netIncomeHistory := p.ExtractHistoryFor("net_income")
-
 	var historiesMap map[string][]float64
 	var changeRateHistoriesMap map[string][]float64
 	var avgMap map[string]float64
+	baseYear := (*p)[0].Year
+	finalYear := (*p)[len(*p)-1].Year
 
-	// TODO: adjust all per share stats to be computed as described below
+	p.purge()
+	stockSplitHistory := p.ExtractHistoryFor("stock_split_ratio")
+
+	// Populate data source maps
 	for _, key := range descriptorList {
-		if key == "eps" {
-			epsHistory := p.ExtractHistoryFor("eps")
-			stockSplitHistory := p.ExtractHistoryFor("stock_split_ratio")
-			adjustedEPSHistory := finance.ComputeAdjustedEPSHistory(epsHistory, stockSplitHistory)
-			historiesMap[key] = adjustedEPSHistory
-			changeRateHistoriesMap[key] = math.ComputeChangeRateHistory(adjustedEPSHistory)
-			avg, err := math.ComputeAverage(adjustedEPSHistory)
+		if utils.IndexOf(perShareDescriptorList, key) >= 0 {
+			history := p.ExtractHistoryFor(key)
+			adjustedHistory := finance.ComputeAdjustedPerShareHistory(history, stockSplitHistory)
+			historiesMap[key] = adjustedHistory
+			changeRateHistoriesMap[key] = math.ComputeChangeRateHistory(adjustedHistory)
+			avg, err := math.ComputeAverage(adjustedHistory)
 			if err != nil {
 				return nil, err
 			}
 
 			avgMap[key] = avg
 		} else {
-		history := p.ExtractHistoryFor(key)
-		historiesMap[key] = history
-		changeRateHistoriesMap[key] = math.ComputeChangeRateHistory(history)
+			history := p.ExtractHistoryFor(key)
+			historiesMap[key] = history
+			changeRateHistoriesMap[key] = math.ComputeChangeRateHistory(history)
 
-		avg, err := math.ComputeAverage(history)
-		if err != nil {
-			return nil, err
-		}
+			avg, err := math.ComputeAverage(history)
+			if err != nil {
+				return nil, err
+			}
 
 			avgMap[key] = avg
 		}
-
 	}
 
-	netEquityBaseYr := historiesMap["net_equity"][0]
-	pvDividendsPerShare := finance.ComputePVOfCashFlows(historiesMap["dividends_per_share"])
-	netEquityLastYr := historiesMap["net_equity_per_share"][len(historiesMap["net_equity_per_share"]) - 1]
-	pvNetEquityLastYr := ComputePV(netEquityLastYr, 2009, 2020)
-	roi := math.ComputeCompoundingRate(netEquityBaseYr, pvDividendsPerShare + pvNetEquityLastYr, len(historiesMap["net_equity_per_share"]))
+	netEquityBaseYr := historiesMap["net_equity_per_share"][0]
+	netEquityLastYr := historiesMap["net_equity_per_share"][finalYear-baseYear]
+	pvDividendsPerShare := finance.ComputeCashFlowsPV(historiesMap["dividends_per_share"], baseYear)
+
+	pvNetEquityFinalYr := finance.ComputePV(netEquityLastYr, baseYear, finalYear)
+	roi, err := math.ComputeCompoundingRate(netEquityBaseYr, pvDividendsPerShare+pvNetEquityFinalYr, finalYear-baseYear)
+	if err != nil {
+		return nil, err
+	}
 
 	stats := CompanyStats{
-		BeginAt:          (*p)[0].Year,
-		EndAt:            (*p)[len(*p)-1].Year,
-		NetIncomeHistory: historiesMap["net_income"],
-		YoYNetIncomeChange: changeRateHistoriesMap["net_income"],
-		AvgYoYNetIncomeChange: avgMap["net_income"],
-		TotalSalesHistory: historiesMap["total_sales"],
-		YoYTotalSalesChange: changeRateHistoriesMap["total_sales"],
-		AvgYoYTotalSalesChange: avgMap["total_sales"],
-		TotalCostOfGoodsHistory: historiesMap["total_cost"],
-		YoYTotalCostOfGoodsChange: changeRateHistoriesMap["total_cost"],
-		AvgYoYTotalCostOfGoodsChange: avgMap["total_cost"],
-		GrossProfitMarginHistory: historiesMap["gross_profit_margin"],
-		YoYGrossProfitMarginChange: changeRateHistoriesMap["gross_profit_margin"],
-		AvgYoYGrossProfitMarginChange: avgMap["gross_profit_margin"],
-		AssetsToLiabilitiesHistory: historiesMap["assets_to_liabilities"],
-		YoYAssetsToLiabilitiesChange: changeRateHistoriesMap["assets_to_liabilities"],
-		AvgAssetsToLiabilities: avgMap["assets_to_liabilities"],
-		CurrentAssetsToCurrentLiabilitiesHistory: historiesMap["current_assets_to_current_liabilities"],
-		AvgCurrentAssetsToCurrentLiabilities: avgMap["current_assets_to_current_liabilities"],
-		YoYCurrentAssetsToCurrentLiabilitiesChange: changeRateHistoriesMap["current_assets_to_current_liabilities"],
-		CurrentAssetsToLiabilitiesHistory: historiesMap["current_assets_to_liabilities"],
-		YoYCurrentAssetsToLiabilitiesChange: changeRateHistoriesMap["current_assets_to_liabilities"],
-		AvgCurrentAssetsToLiabilities: avgMap["current_assets_to_liabilities"],
-		WorkingCapitalToCurrentLiabilitiesHistory: historiesMap["working_capital_to_current_liabilities"],
+		BeginAt:                                     baseYear,
+		EndAt:                                       finalYear,
+		NetIncomeHistory:                            historiesMap["net_income"],
+		YoYNetIncomeChange:                          changeRateHistoriesMap["net_income"],
+		AvgYoYNetIncomeChange:                       avgMap["net_income"],
+		TotalSalesHistory:                           historiesMap["total_sales"],
+		YoYTotalSalesChange:                         changeRateHistoriesMap["total_sales"],
+		AvgYoYTotalSalesChange:                      avgMap["total_sales"],
+		TotalCostOfGoodsHistory:                     historiesMap["total_cost"],
+		YoYTotalCostOfGoodsChange:                   changeRateHistoriesMap["total_cost"],
+		AvgYoYTotalCostOfGoodsChange:                avgMap["total_cost"],
+		GrossProfitMarginHistory:                    historiesMap["gross_profit_margin"],
+		YoYGrossProfitMarginChange:                  changeRateHistoriesMap["gross_profit_margin"],
+		AvgYoYGrossProfitMarginChange:               avgMap["gross_profit_margin"],
+		AssetsToLiabilitiesHistory:                  historiesMap["assets_to_liabilities"],
+		YoYAssetsToLiabilitiesChange:                changeRateHistoriesMap["assets_to_liabilities"],
+		AvgAssetsToLiabilities:                      avgMap["assets_to_liabilities"],
+		CurrentAssetsToCurrentLiabilitiesHistory:    historiesMap["current_assets_to_current_liabilities"],
+		AvgCurrentAssetsToCurrentLiabilities:        avgMap["current_assets_to_current_liabilities"],
+		YoYCurrentAssetsToCurrentLiabilitiesChange:  changeRateHistoriesMap["current_assets_to_current_liabilities"],
+		CurrentAssetsToLiabilitiesHistory:           historiesMap["current_assets_to_liabilities"],
+		YoYCurrentAssetsToLiabilitiesChange:         changeRateHistoriesMap["current_assets_to_liabilities"],
+		AvgCurrentAssetsToLiabilities:               avgMap["current_assets_to_liabilities"],
+		WorkingCapitalToCurrentLiabilitiesHistory:   historiesMap["working_capital_to_current_liabilities"],
 		YoYWorkingCapitalToCurrentLiabilitiesChange: changeRateHistoriesMap["working_capital_to_current_liabilities"],
-		AvgWorkingCapitalToCurrentLiabilities: avgMap["working_capital_to_current_liabilities"],
-		WorkingCapitalToLiabilitiesHistory: historiesMap["working_capital_to_liabilities"],
-		YoYWorkingCapitalToLiabilitiesChange: changeRateHistoriesMap["working_capital_to_liabilities"],
-		AvgWorkingCapitalToLiabilities: avgMap["working_capital_to_liabilities"],
-		GoodwillToAssetsHistory: historiesMap["goodwill_to_assets"],
-		YoYGoodwillToAssetsChange: changeRateHistoriesMap["goodwill_to_assets"],
-		AvgGoodwillToAssets: avgMap["goodwill_to_assets"],
-		GoodwillToEquityHistory: historiesMap["goodwill_to_equity"],
-		YoYGoodwillToEquityChange: changeRateHistoriesMap["goodwill_to_equity"],
-		AvgGoodwillToEquity: avgMap["goodwill_to_equity"],
-		SharesOutstandingHistory: historiesMap["shares_outstanding"],
-		YoYSharesOutstandingChange: changeRateHistoriesMap["shares_outstanding"],
-		AvgSharesOutstanding: avgMap["shares_outstanding"],
-		EPSHistory: historiesMap["eps"],
-		YoYEPSChange: changeRateHistoriesMap["eps"],
-		AvgEPS: avgMap["eps"],
-		EquityPerShareHistory: historiesMap["equity_per_share"],
-		YoYEquityPerShareChange: changeRateHistoriesMap["equity_per_share"],
-		AvgEquityPerShare: avgMap["equity_per_share"],
-		TangibleAssetsPerShareHistory: historiesMap["tangible_assets_per_share"],
-		YoYTangibleAssetsPerShareChange: changeRateHistoriesMap["tangible_assets_per_share"],
-		AvgTangibleAssetsPerShare: avgMap["tangible_assets_per_share"],
-		LiabilitiesPerShareHistory: historiesMap["liabilities_per_share"],
-		YoYLiabilitiesPerShareChange: changeRateHistoriesMap["liabilities_per_share"],
-		AvgLiabilitiesPerShare: avgMap["liabilities_per_share"],
-		DebtToEquityHistory: historiesMap["debt_to_equity"],
-		YoYDebtToEquityChange: changeRateHistoriesMap["debt_to_equity"],
-		AvgDebtToEquity: avgMap["debt_to_equity"],
-		DebtToNetEquityHistory: historiesMap["debt_to_net_equity"],
-		YoYDebtToNetEquityChange: changeRateHistoriesMap["debt_to_net_equity"],
-		AvgDebtToNetEquity: avgMap["debt_to_net_equity"],
-		ReturnOnEquityHistory: historiesMap["return_on_equity"],
-		YoYReturnOnEquityChange: changeRateHistoriesMap["return_on_equity"],
-		AvgReturnOnEquity: avgMap["return_on_equity"],
-		ReturnOnWorkingCapitalHistory: historiesMap["return_on_working_capital"],
-		YoYReturnOnWorkingCapitalChange: changeRateHistoriesMap["return_on_working_capital"],
-		AvgReturnOnWorkingCapital: avgMap["return_on_working_capital"],
-		CompoundROIForPeriod: math.ComputeCompoundingRate(historiesMap["net_equity"][0], finance.ComputePVOfCashFlows(historiesMap["dividends_per_share"], historiesMap["net_equity_per_share"][len(historiesMap["net_equity_per_share"]) - 1]))
+		AvgWorkingCapitalToCurrentLiabilities:       avgMap["working_capital_to_current_liabilities"],
+		WorkingCapitalToLiabilitiesHistory:          historiesMap["working_capital_to_liabilities"],
+		YoYWorkingCapitalToLiabilitiesChange:        changeRateHistoriesMap["working_capital_to_liabilities"],
+		AvgWorkingCapitalToLiabilities:              avgMap["working_capital_to_liabilities"],
+		GoodwillToAssetsHistory:                     historiesMap["goodwill_to_assets"],
+		YoYGoodwillToAssetsChange:                   changeRateHistoriesMap["goodwill_to_assets"],
+		AvgGoodwillToAssets:                         avgMap["goodwill_to_assets"],
+		GoodwillToEquityHistory:                     historiesMap["goodwill_to_equity"],
+		YoYGoodwillToEquityChange:                   changeRateHistoriesMap["goodwill_to_equity"],
+		AvgGoodwillToEquity:                         avgMap["goodwill_to_equity"],
+		SharesOutstandingHistory:                    historiesMap["shares_outstanding"],
+		YoYSharesOutstandingChange:                  changeRateHistoriesMap["shares_outstanding"],
+		AvgSharesOutstanding:                        avgMap["shares_outstanding"],
+		EPSHistory:                                  historiesMap["eps"],
+		YoYEPSChange:                                changeRateHistoriesMap["eps"],
+		AvgEPS:                                      avgMap["eps"],
+		EquityPerShareHistory:                       historiesMap["equity_per_share"],
+		YoYEquityPerShareChange:                     changeRateHistoriesMap["equity_per_share"],
+		AvgEquityPerShare:                           avgMap["equity_per_share"],
+		TangibleAssetsPerShareHistory:               historiesMap["tangible_assets_per_share"],
+		YoYTangibleAssetsPerShareChange:             changeRateHistoriesMap["tangible_assets_per_share"],
+		AvgTangibleAssetsPerShare:                   avgMap["tangible_assets_per_share"],
+		LiabilitiesPerShareHistory:                  historiesMap["liabilities_per_share"],
+		YoYLiabilitiesPerShareChange:                changeRateHistoriesMap["liabilities_per_share"],
+		AvgLiabilitiesPerShare:                      avgMap["liabilities_per_share"],
+		DebtToEquityHistory:                         historiesMap["debt_to_equity"],
+		YoYDebtToEquityChange:                       changeRateHistoriesMap["debt_to_equity"],
+		AvgDebtToEquity:                             avgMap["debt_to_equity"],
+		DebtToNetEquityHistory:                      historiesMap["debt_to_net_equity"],
+		YoYDebtToNetEquityChange:                    changeRateHistoriesMap["debt_to_net_equity"],
+		AvgDebtToNetEquity:                          avgMap["debt_to_net_equity"],
+		ReturnOnEquityHistory:                       historiesMap["return_on_equity"],
+		YoYReturnOnEquityChange:                     changeRateHistoriesMap["return_on_equity"],
+		AvgReturnOnEquity:                           avgMap["return_on_equity"],
+		ReturnOnWorkingCapitalHistory:               historiesMap["return_on_working_capital"],
+		YoYReturnOnWorkingCapitalChange:             changeRateHistoriesMap["return_on_working_capital"],
+		AvgReturnOnWorkingCapital:                   avgMap["return_on_working_capital"],
+		CompoundROIForPeriod:                        roi,
 	}
 
 	return &stats, nil
 }
-
-

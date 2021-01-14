@@ -11,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"screener.com/profile/repository/mongodb"
+	"screener.com/screener/delivery"
 )
 
 func main() {
@@ -41,7 +42,10 @@ func main() {
 	}()
 
 	// Handle input subcommand
-	handleCommand(ctx, client)
+	if err := handleCommand(ctx, client); err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
 
 	// Exit program successfully
 	os.Exit(0)
@@ -62,7 +66,7 @@ func initMongoClient(ctx context.Context) (*mongo.Client, error) {
 }
 
 // TODO: return errors and let main function handle the exit
-func handleCommand(ctx context.Context, client *mongo.Client) {
+func handleCommand(ctx context.Context, client *mongo.Client) error {
 	coDetailsCmd := flag.NewFlagSet("companydetails", flag.ExitOnError)
 	coCIK := coDetailsCmd.String("cik", "", "cik")
 	coDetailsCmd.Usage = func() {
@@ -72,8 +76,7 @@ func handleCommand(ctx context.Context, client *mongo.Client) {
 
 	if len(os.Args) < 2 {
 		// A more apprpriate Usage handling function call would be better here
-		fmt.Println("Expected fullscreen or companydetails subcommands")
-		os.Exit(1)
+		return fmt.Errorf("Expected fullscreen or companydetails subcommands")
 	}
 
 	switch os.Args[1] {
@@ -81,40 +84,28 @@ func handleCommand(ctx context.Context, client *mongo.Client) {
 	case "fullscreen":
 		fmt.Println("Executing full screening task...")
 		r := mongodb.NewProfileRepository(client)
-		ciks, err := r.GetFullCIKList(ctx)
+		_, err := r.GetFullCIKList(ctx)
 		if err != nil {
-			fmt.Printf("Error while retrieving cik list: %s\n", err.Error())
-			os.Exit(1)
+			return err
 		}
-		fmt.Printf("cik list count: %d\n", len(*ciks))
-		fmt.Printf("first cik: %s\n", (*ciks)[0].(string))
 	// go run main.go companydetails --cik=111111
 	case "companydetails":
 		if len(os.Args[2:]) < 1 {
 			coDetailsCmd.Usage()
-			os.Exit(1)
+			return fmt.Errorf("Invalid arguments")
 
 		} else {
 			coDetailsCmd.Parse(os.Args[2:])
 			fmt.Printf("Extracting details for CIK %s\n", *coCIK)
-			r := mongodb.NewProfileRepository(client)
-			fcProfile, err := r.GetFullProfileForCIK(ctx, *coCIK)
-			if err != nil {
-				fmt.Printf("Error while retrieving full profile for cik: %s, err: %s\n", *coCIK, err.Error())
-				os.Exit(1)
+			handler := delivery.NewScreenerHandler(client)
+			if err := handler.GetStatsForCIK(ctx, *coCIK); err != nil {
+				return err
 			}
-
-			fmt.Printf("Number of yearly profiles retrieved: %d\n", len(*fcProfile))
-
-			testProfile := (*fcProfile)[0]
-			goodwill := testProfile.Profile["goodwill"]
-
-			fmt.Printf("Goodwill: %f\n", *goodwill)
 		}
 
 	default:
-		fmt.Println("Expected fullscreen or companydetails subcommands")
-		os.Exit(1)
+		return fmt.Errorf("Expected fullscreen or companydetails subcommands")
 	}
-	return
+
+	return nil
 }

@@ -12,19 +12,74 @@ const (
 	minYrsOfData = 5
 )
 
+// to be added
+// total_cost
+// working_capital_to_current_liabilities
+// working_capital_to_total_liabilities
+// goodwill_to_equity
+// equity_per_share
+// net_equity_per_share
+// tangible_assets_per_share
+// liabilities_per_share
+// return-on-equity
+// return-on-working-capital
+
+// (:research-expense-to-revenue
+//  :current-assets-to-current-liabilities
+//  :working-capital
+//  :comprehensive-stocks-outstanding
+//  :capital-expenditures
+//  :total-liabilities
+//  :stock-options-exercised
+//  :return-on-working-capital
+//  :goodwill-to-total-assets
+//  :return-on-equity
+//  :operating-income
+//  :depreciation
+//  :total-equity
+//  :debt-to-net-equity
+//  :net-profit-margin
+//  :tangible-assets
+//  :debt-to-equity
+//  :total-sales
+//  :goodwill
+//  :stock-options-granted
+//  :research-and-development-expense
+//  :stock-split-ratio
+//  :inventory
+//  :free-cash-flow
+//  :accounts-payable
+//  :current-assets
+//  :operational-profit-margin
+//  :long-term-debt
+//  :net-equity
+//  :dividends-paid-to-net-income
+//  :total-tangible-assets-to-total-liabilities
+//  :current-liabilities
+//  :stock-repurchase-payment
+//  :common-stock-outstanding
+//  :net-income
+//  :dividend-payment
+//  :total-assets
+//  :dividends-per-share-paid
+//  :current-assets-to-total-liabilities
+//  :accounts-payable-to-current-assets
+//  :diluted-eps
+//  :eps)
+
 var descriptorList = []string{
 	"net_income",
 	"total_sales",
 	"total_cost",
-	"gross_profit_margin",
-	"assets_to_liabilities",
+	"operational_profit_margin",
+	"total_tangible_assets_to_total_liabilities",
 	"current_assets_to_current_liabilities",
-	"current_assets_to_liabilities",
+	"current_assets_to_total_liabilities",
 	"working_capital_to_current_liabilities",
-	"working_capital_to_liabilities",
-	"goodwill_to_assets",
+	"working_capital_to_total_liabilities",
+	"goodwill_to_total_assets",
 	"goodwill_to_equity",
-	"shares_outstanding",
+	"comprehensive_stocks_outstanding",
 	"stock_split_ratio",
 	"eps",
 	"equity_per_share",
@@ -84,8 +139,7 @@ func (p *FullCompanyProfile) HasEnoughData() bool {
 // YearlyProfiles containing data. Assumes elements have been preorded ascendingly based on
 // year
 func (p *FullCompanyProfile) purge() {
-	profLen := len(*p)
-	for i := profLen - minYrsOfData - 1; i >= 0; i-- {
+	for i := len(*p) - 1; i >= 0; i-- {
 		if len((*p)[i].Profile) == 0 {
 			*p = (*p)[i+1:]
 			return
@@ -109,9 +163,9 @@ func (p *FullCompanyProfile) ExtractHistoryFor(key string) []float64 {
 }
 
 func (p *FullCompanyProfile) ComputeCompanyStats() (*CompanyStats, error) {
-	var historiesMap map[string][]float64
-	var changeRateHistoriesMap map[string][]float64
-	var avgMap map[string]float64
+	historiesMap := make(map[string][]float64)
+	changeRateHistoriesMap := make(map[string][]float64)
+	avgMap := make(map[string]float64)
 	baseYear := (*p)[0].Year
 	finalYear := (*p)[len(*p)-1].Year
 
